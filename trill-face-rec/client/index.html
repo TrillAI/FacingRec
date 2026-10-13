@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0f1c">
+  <meta name="description" content="Trill Face Rec: fast, private, on-device face recognition with people management.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Trill">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>Trill Face Rec</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="boot" class="boot" role="status" aria-live="polite">
+    <div class="spinner"></div>
+    <p>Starting Trill Face Rec…</p>
+  </div>
+
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="logo" aria-hidden="true"></span><span>Trill <b>Face Rec</b></span></div>
+      <span class="pill" data-net>Connecting…</span>
+    </header>
+
+    <aside class="sidebar" aria-label="Sidebar">
+      <div class="brand"><span class="logo" aria-hidden="true"></span><span>Trill <b>Face Rec</b></span></div>
+      <nav class="side-nav" id="sidenav" aria-label="Main"></nav>
+      <div class="side-foot"><span class="pill" data-net>Connecting…</span></div>
+    </aside>
+
+    <main id="app" class="main"></main>
+
+    <nav class="tabbar" id="tabbar" aria-label="Main"></nav>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <script src="vendor/face-api.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

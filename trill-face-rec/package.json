@@ -1,0 +1,23 @@
+{
+  "name": "trill-face-rec",
+  "version": "1.0.0",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "setup": "node scripts/setup-vendor.js",
+    "test": "node test/api.test.js",
+    "postinstall": "node scripts/setup-vendor.js"
+  },
+  "description": "Trill Face Rec: full-stack face recognition PWA",
+  "dependencies": {
+    "@vladmandic/face-api": "^1.7.15",
+    "better-sqlite3": "^12.11.1",
+    "compression": "^1.8.2",
+    "express": "^5.3.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}

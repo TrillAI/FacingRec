@@ -1,0 +1,6 @@
+{
+  "name": "Meridian Telemetry & Analytics",
+  "description": "Trill Face Rec: fast, private, on-device face recognition PWA with live camera tracking, photo analysis, people management, offline sync, and enterprise authentication.",
+  "requestFramePermissions": ["camera", "display-capture"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

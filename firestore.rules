@@ -1,0 +1,332 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function hasActiveProfile(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId));
+    }
+
+    // 3. Entity Validation Blueprints (Anti-Update-Gap)
+    function isValidUserPublicProfile(data) {
+      return data.keys().hasAll([
+        'uid',
+        'displayName',
+        'organizationName',
+        'jobTitle',
+        'themePreference',
+        'onboardingCompleted',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid',
+        'displayName',
+        'organizationName',
+        'jobTitle',
+        'themePreference',
+        'onboardingCompleted',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.uid == request.auth.uid &&
+      data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+      data.organizationName is string && data.organizationName.size() >= 1 && data.organizationName.size() <= 100 &&
+      data.jobTitle is string && data.jobTitle.size() >= 1 && data.jobTitle.size() <= 80 &&
+      data.themePreference is string && data.themePreference.size() <= 10 && (data.themePreference == 'light' || data.themePreference == 'dark') &&
+      data.onboardingCompleted is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data) {
+      return data.keys().hasAll(['uid', 'email', 'updatedAt']) &&
+      data.keys().hasOnly(['uid', 'email', 'updatedAt']) &&
+      data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.uid == request.auth.uid &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 254 &&
+      data.email == request.auth.token.email &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidDashboardWidget(data) {
+      return data.keys().hasAll([
+        'ownerId',
+        'title',
+        'widgetType',
+        'metricCategory',
+        'colSpan',
+        'positionIndex',
+        'isVisible',
+        'targetThreshold',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId',
+        'title',
+        'widgetType',
+        'metricCategory',
+        'colSpan',
+        'positionIndex',
+        'isVisible',
+        'targetThreshold',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.ownerId == request.auth.uid &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 80 &&
+      data.widgetType is string && data.widgetType.size() <= 32 && (
+        data.widgetType == 'kpi_card' ||
+        data.widgetType == 'area_chart' ||
+        data.widgetType == 'bar_chart' ||
+        data.widgetType == 'distribution_ring' ||
+        data.widgetType == 'data_table'
+      ) &&
+      data.metricCategory is string && data.metricCategory.size() <= 32 && (
+        data.metricCategory == 'revenue' ||
+        data.metricCategory == 'throughput' ||
+        data.metricCategory == 'latency' ||
+        data.metricCategory == 'conversion' ||
+        data.metricCategory == 'retention'
+      ) &&
+      data.colSpan is number && data.colSpan >= 4 && data.colSpan <= 12 &&
+      data.positionIndex is number && data.positionIndex >= 0 && data.positionIndex <= 100 &&
+      data.isVisible is bool &&
+      data.targetThreshold is number && data.targetThreshold >= -1000000000 && data.targetThreshold <= 1000000000 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidMetricRecord(data) {
+      return data.keys().hasAll([
+        'ownerId',
+        'label',
+        'category',
+        'region',
+        'value',
+        'baseline',
+        'unit',
+        'status',
+        'periodLabel',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId',
+        'label',
+        'category',
+        'region',
+        'value',
+        'baseline',
+        'unit',
+        'status',
+        'periodLabel',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.ownerId == request.auth.uid &&
+      data.label is string && data.label.size() >= 1 && data.label.size() <= 80 &&
+      data.category is string && data.category.size() <= 32 && (
+        data.category == 'revenue' ||
+        data.category == 'throughput' ||
+        data.category == 'latency' ||
+        data.category == 'conversion' ||
+        data.category == 'retention'
+      ) &&
+      data.region is string && data.region.size() <= 32 && (
+        data.region == 'us-west' ||
+        data.region == 'us-east' ||
+        data.region == 'eu-central' ||
+        data.region == 'ap-northeast'
+      ) &&
+      data.value is number && data.value >= -1000000000 && data.value <= 1000000000 &&
+      data.baseline is number && data.baseline >= -1000000000 && data.baseline <= 1000000000 &&
+      data.unit is string && data.unit.size() >= 1 && data.unit.size() <= 16 &&
+      data.status is string && data.status.size() <= 16 && (
+        data.status == 'nominal' ||
+        data.status == 'warning' ||
+        data.status == 'critical' ||
+        data.status == 'archived'
+      ) &&
+      data.periodLabel is string && data.periodLabel.size() <= 1 && data.periodLabel.size() <= 32 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // 4. Collection Match Blocks
+
+    // Public User Profile (PII-free)
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserPublicProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserPublicProfile(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Update profile details or onboarding completion
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName',
+            'organizationName',
+            'jobTitle',
+            'themePreference',
+            'onboardingCompleted',
+            'updatedAt'
+          ]) ||
+          // Action 2: Theme toggle update
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'themePreference',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if false;
+
+      // Isolated Private PII Subcollection
+      match /private/{docId} {
+        allow get: if isOwner(userId) && isValidId(userId) && docId == 'info' && hasActiveProfile(userId);
+        allow list: if false;
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          docId == 'info' &&
+          isValidUserPrivateInfo(incoming()) &&
+          incoming().updatedAt == request.time &&
+          hasActiveProfile(userId);
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          docId == 'info' &&
+          isValidUserPrivateInfo(incoming()) &&
+          incoming().uid == existing().uid &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']) &&
+          hasActiveProfile(userId);
+
+        allow delete: if false;
+      }
+    }
+
+    // Customizable Dashboard Widgets
+    match /widgets/{widgetId} {
+      allow get: if isVerifiedUser() && isValidId(widgetId) && existing().ownerId == request.auth.uid;
+      allow list: if isVerifiedUser() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(widgetId) &&
+        isValidDashboardWidget(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        hasActiveProfile(request.auth.uid);
+
+      allow update: if isVerifiedUser() &&
+        isValidId(widgetId) &&
+        isValidDashboardWidget(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Configure widget layout, visibility, or threshold
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'title',
+            'widgetType',
+            'metricCategory',
+            'colSpan',
+            'positionIndex',
+            'isVisible',
+            'targetThreshold',
+            'updatedAt'
+          ])
+        ) &&
+        hasActiveProfile(request.auth.uid);
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(widgetId) &&
+        existing().ownerId == request.auth.uid &&
+        hasActiveProfile(request.auth.uid);
+    }
+
+    // Scalable Telemetry & Metric Records
+    match /metrics/{metricId} {
+      allow get: if isVerifiedUser() && isValidId(metricId) && existing().ownerId == request.auth.uid;
+      allow list: if isVerifiedUser() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(metricId) &&
+        isValidMetricRecord(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        hasActiveProfile(request.auth.uid);
+
+      allow update: if isVerifiedUser() &&
+        isValidId(metricId) &&
+        isValidMetricRecord(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        // Terminal State Locking: archived records cannot be modified
+        existing().status != 'archived' && (
+          // Action 1: Update metric telemetry values or status
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'label',
+            'category',
+            'region',
+            'value',
+            'baseline',
+            'unit',
+            'status',
+            'periodLabel',
+            'updatedAt'
+          ])
+        ) &&
+        hasActiveProfile(request.auth.uid);
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(metricId) &&
+        existing().ownerId == request.auth.uid &&
+        hasActiveProfile(request.auth.uid);
+    }
+  }
+}

@@ -1,0 +1,219 @@
+{
+  "entities": {
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Publicly accessible user profile and onboarding configuration without PII.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "organizationName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "jobTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "themePreference": {
+          "type": "string",
+          "enum": ["light", "dark"]
+        },
+        "onboardingCompleted": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "organizationName",
+        "jobTitle",
+        "themePreference",
+        "onboardingCompleted",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated private user PII including verified email and notification settings.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "updatedAt"]
+    },
+    "DashboardWidget": {
+      "title": "DashboardWidget",
+      "description": "Customizable dashboard visualization widget configured by a user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "widgetType": {
+          "type": "string",
+          "enum": ["kpi_card", "area_chart", "bar_chart", "distribution_ring", "data_table"]
+        },
+        "metricCategory": {
+          "type": "string",
+          "enum": ["revenue", "throughput", "latency", "conversion", "retention"]
+        },
+        "colSpan": {
+          "type": "number"
+        },
+        "positionIndex": {
+          "type": "number"
+        },
+        "isVisible": {
+          "type": "boolean"
+        },
+        "targetThreshold": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "title",
+        "widgetType",
+        "metricCategory",
+        "colSpan",
+        "positionIndex",
+        "isVisible",
+        "targetThreshold",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MetricRecord": {
+      "title": "MetricRecord",
+      "description": "Time-series and categorical telemetry or business metric entry for real-time visualization.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "category": {
+          "type": "string",
+          "enum": ["revenue", "throughput", "latency", "conversion", "retention"]
+        },
+        "region": {
+          "type": "string",
+          "enum": ["us-west", "us-east", "eu-central", "ap-northeast"]
+        },
+        "value": {
+          "type": "number"
+        },
+        "baseline": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "status": {
+          "type": "string",
+          "enum": ["nominal", "warning", "critical", "archived"]
+        },
+        "periodLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "label",
+        "category",
+        "region",
+        "value",
+        "baseline",
+        "unit",
+        "status",
+        "periodLabel",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserPublicProfile",
+      "description": "Stores public user profile and workspace onboarding status."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": "UserPrivateInfo",
+      "description": "Isolated subcollection storing private PII (email) restricted strictly to the owner."
+    },
+    "/widgets/{widgetId}": {
+      "schema": "DashboardWidget",
+      "description": "Stores customizable dashboard widgets for each user."
+    },
+    "/metrics/{metricId}": {
+      "schema": "MetricRecord",
+      "description": "Stores scalable telemetry and business metric records for visualization."
+    }
+  }
+}
