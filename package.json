@@ -8,7 +8,7 @@
     "build": "node scripts/setup-vendor.mjs && vite build",
     "start": "node --import tsx server.ts",
     "setup": "node scripts/setup-vendor.mjs",
-    "test": "node trill-face-rec/test/api.test.js",
+    "test": "node --import tsx --test test/face-studio.test.js && node --test test/server.test.js && node trill-face-rec/test/api.test.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
@@ -40,7 +40,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/ws": "^8.18.2",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.0",
     "eslint": "^10.12.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",

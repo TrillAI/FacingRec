@@ -156,13 +156,10 @@ if (fs.existsSync(src)) {
 writeIconsTo(path.join(root, 'public', 'icons'));
 writeIconsTo(path.join(root, 'trill-face-rec', 'client', 'icons'));
 
-// Copy manifest and sw.js to public/ as well
+// Sync the shared PWA manifest. The root React app has its own service worker;
+// the vanilla client keeps using trill-face-rec/client/sw.js.
 const clientManifest = path.join(root, 'trill-face-rec', 'client', 'manifest.webmanifest');
 if (fs.existsSync(clientManifest)) {
   fs.copyFileSync(clientManifest, path.join(root, 'public', 'manifest.webmanifest'));
 }
-const clientSw = path.join(root, 'trill-face-rec', 'client', 'sw.js');
-if (fs.existsSync(clientSw)) {
-  fs.copyFileSync(clientSw, path.join(root, 'public', 'sw.js'));
-}
-console.log('[setup-vendor] PWA icons, manifest, and service worker synchronized.');
+console.log('[setup-vendor] PWA icons and manifest synchronized.');
