@@ -28,6 +28,7 @@ import {
   TrillAnalyticsDashboard,
   TrillOnboardingModal,
 } from './trill/TrillDashboard';
+import { FaceStudioView } from './trill/FaceStudio';
 import {
   Camera,
   Image as ImageIcon,
@@ -35,6 +36,7 @@ import {
   ListOrdered,
   Settings,
   LayoutDashboard,
+  Sparkles,
   Sun,
   Moon,
   LogIn,
@@ -44,7 +46,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 
-type TrillTab = 'live' | 'upload' | 'people' | 'log' | 'dashboard' | 'settings';
+type TrillTab = 'live' | 'upload' | 'people' | 'log' | 'dashboard' | 'studio' | 'settings';
 
 const NAV_ITEMS: { id: TrillTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'live', label: 'Live', icon: Camera },
@@ -52,6 +54,7 @@ const NAV_ITEMS: { id: TrillTab; label: string; icon: React.ComponentType<{ clas
   { id: 'people', label: 'People', icon: Users },
   { id: 'log', label: 'Log', icon: ListOrdered },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'studio', label: 'Studio', icon: Sparkles },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -75,6 +78,7 @@ export default function App() {
   // PWA Install Prompt
   const [installable, setInstallable] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const wsIdentityRef = useRef<{ token: string; displayName: string } | null>(null);
 
   // Sync theme with document root
   useEffect(() => {
@@ -141,12 +145,22 @@ export default function App() {
       if (!navigator.onLine) {
         setNetState('offline');
         setNetLabel('Offline · cached gallery');
+        setPeerCount(0);
+        if (wsRef.current) {
+          const ws = wsRef.current;
+          wsRef.current = null;
+          ws.close();
+        }
         return;
       }
       try {
         const hl = await api.health();
         setNetState('online');
         setNetLabel('Online');
+        const identity = wsIdentityRef.current;
+        if (identity && (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)) {
+          connectWebSocket(identity.token, identity.displayName);
+        }
         if (hl.authRequired) {
           setActiveTab('settings');
           showToast('This server requires an API key. Enter it in Settings.', 'info');
@@ -202,12 +216,19 @@ export default function App() {
   }, []);
 
   const connectWebSocket = (token: string, displayName: string) => {
+    wsIdentityRef.current = { token, displayName };
+    if (!navigator.onLine) return;
     if (wsRef.current) {
-      wsRef.current.close();
+      const previous = wsRef.current;
+      wsRef.current = null;
+      previous.close();
     }
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${proto}//${window.location.host}/ws`);
     wsRef.current = ws;
+    ws.onclose = () => {
+      if (wsRef.current === ws) wsRef.current = null;
+    };
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'auth', token, displayName }));
@@ -492,13 +513,14 @@ export default function App() {
         {activeTab === 'dashboard' && (
           <TrillAnalyticsDashboard onNavigate={(t) => navigateTab(t)} />
         )}
+        {activeTab === 'studio' && <FaceStudioView />}
         {activeTab === 'settings' && <TrillSettingsView />}
       </main>
 
       {/* Mobile Bottom Tab Bar */}
       <nav
         aria-label="Mobile"
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 grid grid-cols-6 bg-white/95 dark:bg-[#101828]/95 backdrop-blur-md border-t border-slate-200 dark:border-[#24314d] px-1 py-1.5"
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 grid grid-cols-7 bg-white/95 dark:bg-[#101828]/95 backdrop-blur-md border-t border-slate-200 dark:border-[#24314d] px-1 py-1.5"
       >
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;

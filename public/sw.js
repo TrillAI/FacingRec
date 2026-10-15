@@ -1,52 +1,38 @@
-// Trill Face Rec service worker.
-// - App shell and code: network-first (so updates land), cache fallback when offline.
-// - Face models (large, immutable): cache-first.
-// - API: network only; the app keeps its own offline gallery in IndexedDB.
-const VERSION = 'trill-face-rec-v1.0.0';
+// Service worker for the root React app.
+// The separate vanilla PWA has its own worker at trill-face-rec/client/sw.js.
+const VERSION = 'trill-face-rec-react-v1.0.0';
 const SHELL_CACHE = `${VERSION}-shell`;
 const MODEL_CACHE = `${VERSION}-models`;
 
-const SHELL = [
-  './',
-  './index.html',
-  './css/styles.css',
-  './js/app.js',
-  './js/util.js',
-  './js/api.js',
-  './js/store.js',
-  './js/settings.js',
-  './js/gallery.js',
-  './js/events.js',
-  './js/camera.js',
-  './js/engine.js',
-  './js/enroll.js',
-  './js/views/live.js',
-  './js/views/upload.js',
-  './js/views/people.js',
-  './js/views/log.js',
-  './js/views/settings-view.js',
-  './vendor/face-api.js',
-  './manifest.webmanifest',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/maskable-512.png',
-  './icons/apple-touch-icon.png',
+const CORE_MODELS = [
+  '/models/tiny_face_detector_model-weights_manifest.json',
+  '/models/tiny_face_detector_model.bin',
+  '/models/face_landmark_68_model-weights_manifest.json',
+  '/models/face_landmark_68_model.bin',
+  '/models/face_recognition_model-weights_manifest.json',
+  '/models/face_recognition_model.bin',
 ];
 
-// Core models needed for live recognition. Accurate-mode (SSD) models are cached on first use.
-const CORE_MODELS = [
-  'models/tiny_face_detector_model-weights_manifest.json',
-  'models/tiny_face_detector_model.bin',
-  'models/face_landmark_68_model-weights_manifest.json',
-  'models/face_landmark_68_model.bin',
-  'models/face_recognition_model-weights_manifest.json',
-  'models/face_recognition_model.bin',
-];
+async function getAppShellUrls() {
+  const response = await fetch('/index.html', { cache: 'reload' });
+  if (!response.ok) throw new Error(`Unable to cache app shell: HTTP ${response.status}`);
+  const html = await response.text();
+  const urls = new Set(['/', '/index.html', '/manifest.webmanifest']);
+
+  // Cache the app entry points in both dev and production, including Vite's
+  // hashed JS/CSS files so an installed app can start without a network.
+  for (const match of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
+    const url = new URL(match[1], self.location.origin);
+    if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) continue;
+    urls.add(`${url.pathname}${url.search}`);
+  }
+  return [...urls];
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const shell = await caches.open(SHELL_CACHE);
-    await shell.addAll(SHELL);
+    await shell.addAll(await getAppShellUrls());
     const models = await caches.open(MODEL_CACHE);
     await models.addAll(CORE_MODELS);
     await self.skipWaiting();
@@ -63,47 +49,48 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
-self.addEventListener('message', (event) => {
-  if (event.data === 'skipWaiting') self.skipWaiting();
-});
-
 async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   try {
-    const res = await fetch(request);
-    if (res.ok) cache.put(request, res.clone());
-    return res;
+    const response = await fetch(request);
+    if (response.ok) await cache.put(request, response.clone());
+    return response;
   } catch {
-    const hit = await cache.match(request) || await cache.match(request.url.split('?')[0]);
-    if (hit) return hit;
-    throw new Error('offline and not cached');
+    const cached = await cache.match(request) || await cache.match(new URL(request.url).pathname);
+    if (cached) return cached;
+    return new Response('Offline and this resource is not cached.', { status: 503 });
   }
 }
 
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
-  const hit = await cache.match(request);
-  if (hit) return hit;
-  const res = await fetch(request);
-  if (res.ok) cache.put(request, res.clone());
-  return res;
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  try {
+    const response = await fetch(request);
+    if (response.ok) await cache.put(request, response.clone());
+    return response;
+  } catch {
+    return new Response('Offline and this model is not cached.', { status: 503 });
+  }
 }
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
-  if (url.pathname.includes('/api/')) return; // never cache API responses
-
-  if (url.pathname.includes('/models/')) {
+  if (url.pathname.startsWith('/models/')) {
     event.respondWith(cacheFirst(request, MODEL_CACHE));
     return;
   }
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirst(new Request('./index.html'), SHELL_CACHE).catch(() => caches.match('./index.html')));
+    event.respondWith(networkFirst(request, SHELL_CACHE).then(async (response) => {
+      if (response.ok) return response;
+      return (await caches.open(SHELL_CACHE)).match('/index.html') || response;
+    }));
     return;
   }
 

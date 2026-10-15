@@ -257,6 +257,9 @@ function authHeaders(): Record<string, string> {
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { ...authHeaders() };
   if (body !== undefined) headers['content-type'] = 'application/json';
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new ApiError(0, 'Offline — server unreachable');
+  }
   let res: Response;
   try {
     res = await fetch(`/api/${path}`, {
@@ -345,6 +348,7 @@ export const api = {
   async thumbUrl(path: string | null | undefined): Promise<string | null> {
     if (!path) return null;
     if (thumbCache.has(path)) return thumbCache.get(path)!;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
     try {
       const res = await fetch(`/api/${path}`, { headers: authHeaders() });
       if (!res.ok) return null;

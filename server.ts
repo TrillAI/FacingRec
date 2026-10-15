@@ -92,23 +92,112 @@ interface DecodedFirebaseJwt {
   iss: string;
 }
 
-function verifyAndDecodeFirebaseJwt(authHeader?: string): DecodedFirebaseJwt | null {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const token = authHeader.slice(7).trim();
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
+interface FirebasePublicJwk extends crypto.JsonWebKey {
+  kid?: string;
+  alg?: string;
+  use?: string;
+}
+
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf8')).projectId || '';
+  } catch {
+    return '';
+  }
+})();
+const FIREBASE_SIGNING_CERTS_URL =
+  process.env.FIREBASE_SIGNING_CERTS_URL ||
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+type FirebasePublicKey = ReturnType<typeof crypto.createPublicKey>;
+let firebasePublicKeyCache: { keys: Map<string, FirebasePublicKey>; expiresAt: number } | null = null;
+let firebasePublicKeyRequest: Promise<Map<string, FirebasePublicKey>> | null = null;
+
+async function getFirebasePublicKeys(): Promise<Map<string, FirebasePublicKey>> {
+  if (firebasePublicKeyCache && firebasePublicKeyCache.expiresAt > Date.now()) {
+    return firebasePublicKeyCache.keys;
+  }
+  if (firebasePublicKeyRequest) return firebasePublicKeyRequest;
+
+  firebasePublicKeyRequest = (async () => {
+    const response = await fetch(FIREBASE_SIGNING_CERTS_URL, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error(`Firebase signing keys returned HTTP ${response.status}`);
+
+    const jwks = (await response.json()) as { keys?: FirebasePublicJwk[] };
+    if (!Array.isArray(jwks.keys)) throw new Error('Firebase signing key response is invalid');
+
+    const keys = new Map<string, FirebasePublicKey>();
+    for (const jwk of jwks.keys) {
+      if (
+        typeof jwk.kid !== 'string' ||
+        jwk.kty !== 'RSA' ||
+        typeof jwk.n !== 'string' ||
+        typeof jwk.e !== 'string' ||
+        (jwk.alg && jwk.alg !== 'RS256') ||
+        (jwk.use && jwk.use !== 'sig')
+      ) {
+        continue;
+      }
+
+      try {
+        const publicJwk: crypto.JsonWebKey = { kty: jwk.kty, n: jwk.n, e: jwk.e };
+        keys.set(jwk.kid, crypto.createPublicKey({ key: publicJwk, format: 'jwk' }));
+      } catch {
+        // Skip malformed or unsupported keys without rejecting a valid key set.
+      }
+    }
+    if (keys.size === 0) throw new Error('Firebase signing key response contains no usable keys');
+
+    const maxAge = Number(response.headers.get('cache-control')?.match(/max-age=(\d+)/i)?.[1] || 3600);
+    firebasePublicKeyCache = {
+      keys,
+      expiresAt: Date.now() + Math.max(1, maxAge) * 1000,
+    };
+    return keys;
+  })();
 
   try {
-    const payloadJson = Buffer.from(parts[1], 'base64url').toString('utf8');
-    const payload = JSON.parse(payloadJson);
+    return await firebasePublicKeyRequest;
+  } finally {
+    firebasePublicKeyRequest = null;
+  }
+}
+
+async function verifyAndDecodeFirebaseJwt(authHeader?: string): Promise<DecodedFirebaseJwt | null> {
+  if (!authHeader || !authHeader.startsWith('Bearer ') || !FIREBASE_PROJECT_ID) return null;
+  const token = authHeader.slice(7).trim();
+  if (token.length > 8192) return null;
+
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) return null;
+
+  try {
+    const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    if (header.alg !== 'RS256' || typeof header.kid !== 'string') return null;
+    if (typeof payload.sub !== 'string' || payload.sub.length < 1 || payload.sub.length > 128) return null;
+    if (!Number.isSafeInteger(payload.exp) || !Number.isSafeInteger(payload.iat)) return null;
+    if (payload.aud !== FIREBASE_PROJECT_ID) return null;
+
+    const issuer = `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`;
+    if (payload.iss !== issuer) return null;
+
     const nowSec = Math.floor(Date.now() / 1000);
-    if (!payload.sub || typeof payload.sub !== 'string') return null;
-    if (payload.exp && payload.exp < nowSec - 60) return null;
+    if (payload.exp <= nowSec - 60 || payload.iat > nowSec + 60 || payload.iat >= payload.exp) return null;
+
+    const publicKey = (await getFirebasePublicKeys()).get(header.kid);
+    if (!publicKey) return null;
+    const signingInput = Buffer.from(`${parts[0]}.${parts[1]}`);
+    const signature = Buffer.from(parts[2], 'base64url');
+    if (!crypto.verify('RSA-SHA256', signingInput, publicKey, signature)) return null;
+
     return {
       uid: payload.sub,
-      email: payload.email,
-      name: payload.name,
-      picture: payload.picture,
+      email: typeof payload.email === 'string' ? payload.email : undefined,
+      name: typeof payload.name === 'string' ? payload.name : undefined,
+      picture: typeof payload.picture === 'string' ? payload.picture : undefined,
       exp: payload.exp,
       iat: payload.iat,
       aud: payload.aud,
@@ -141,15 +230,15 @@ const PALETTE = [
   '#f472b6', // Radiant Orchid
 ];
 
-function requireTrillAuth(req: Request, res: Response, next: NextFunction) {
+async function requireTrillAuth(req: Request, res: Response, next: NextFunction) {
   if (!API_KEY) return next();
   const given = req.get('x-api-key') || '';
   const a = Buffer.from(given);
   const b = Buffer.from(API_KEY);
   if (a.length === b.length && crypto.timingSafeEqual(a, b)) return next();
 
-  // Also allow valid Firebase JWT Bearer token when signed in
-  const jwtUser = verifyAndDecodeFirebaseJwt(req.headers.authorization);
+  // Also allow a cryptographically verified Firebase ID token when signed in.
+  const jwtUser = await verifyAndDecodeFirebaseJwt(req.headers.authorization);
   if (jwtUser) {
     (req as Request & { user?: DecodedFirebaseJwt }).user = jwtUser;
     return next();
@@ -200,9 +289,9 @@ function getPresenceList() {
 // ============================================================================
 async function startServer() {
   const app = express();
-  // Port 3000 is required by the AI Studio preview environment
-  const PORT = 3000;
-  const HOST = '0.0.0.0';
+  // Default to the AI Studio preview port while allowing isolated test instances.
+  const PORT = Number.parseInt(process.env.PORT || '', 10) || 3000;
+  const HOST = process.env.HOST || '0.0.0.0';
   const httpServer = createServer(app);
 
   app.disable('x-powered-by');
@@ -231,8 +320,8 @@ async function startServer() {
   });
 
   // JWT verification & session audit endpoint
-  apiRouter.get('/auth/verify', (req: Request, res: Response) => {
-    const decoded = verifyAndDecodeFirebaseJwt(req.headers.authorization);
+  apiRouter.get('/auth/verify', async (req: Request, res: Response) => {
+    const decoded = await verifyAndDecodeFirebaseJwt(req.headers.authorization);
     if (!decoded) {
       res.status(401).json({ error: 'Invalid or missing Bearer JWT token.' });
       return;
@@ -932,11 +1021,17 @@ async function startServer() {
   wss.on('connection', (ws: WebSocket) => {
     let clientId: string | null = null;
 
-    ws.on('message', (raw: Buffer) => {
+    ws.on('message', async (raw: Buffer) => {
       try {
         const msg = JSON.parse(raw.toString());
         if (msg.type === 'auth' && typeof msg.token === 'string') {
-          const decoded = verifyAndDecodeFirebaseJwt(`Bearer ${msg.token}`);
+          const isAnonymous = msg.token === 'anonymous';
+          const decoded = isAnonymous ? null : await verifyAndDecodeFirebaseJwt(`Bearer ${msg.token}`);
+          if (!isAnonymous && !decoded) {
+            ws.send(JSON.stringify({ type: 'auth_error', error: 'Invalid Firebase ID token' }));
+            return;
+          }
+
           const uid = decoded?.uid || `device_${crypto.randomUUID().slice(0, 8)}`;
           const displayName =
             typeof msg.displayName === 'string' && msg.displayName.trim()
